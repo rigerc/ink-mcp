@@ -26,10 +26,7 @@ const shutdown = () => {
   if (closing) return;
   closing = true;
   registry.close();
-  void handle.close().then(() => process.exit(0)).catch((error: unknown) => {
-    process.stderr.write("Shutdown error: " + String(error) + "\n");
-    process.exit(1);
-  });
+  void handle.close().then(() => process.exit(0), () => process.exit(1));
 };
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
