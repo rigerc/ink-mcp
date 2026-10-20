@@ -139,7 +139,7 @@ export default defineConfig(({ command: _command }) => ({
   build: {
     lib: {
       entry: resolve(__dirname, "src/index.ts"),
-      name: "MCPTypescriptTemplate",
+      name: "InkDevMcp",
       fileName: "index",
       formats: ["es"],
     },
@@ -147,6 +147,9 @@ export default defineConfig(({ command: _command }) => ({
     outDir: "dist",
     emptyOutDir: true,
     ssr: true,
+    rollupOptions: {
+      external: ["@modelcontextprotocol/server", "@modelcontextprotocol/server/stdio", "@xterm/headless", "node-pty", "effect"],
+    },
   },
   resolve: {
     alias: {
@@ -154,11 +157,7 @@ export default defineConfig(({ command: _command }) => ({
     },
   },
   ssr: {
-    external: [
-      "@modelcontextprotocol/server",
-      "@modelcontextprotocol/node",
-      "express",
-      "effect",
-    ],
+    external: ["@modelcontextprotocol/server", "@xterm/headless", "node-pty", "effect"],
   },
+
 }));
