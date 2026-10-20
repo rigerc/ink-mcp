@@ -2,13 +2,15 @@ import { createRequire } from "node:module";
 import { realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { IPty } from "node-pty";
+import type { IPty, spawn as spawnPty } from "node-pty";
 import type { Terminal as HeadlessTerminal } from "@xterm/headless";
 
 const require = createRequire(import.meta.url);
 // Both packages expose CommonJS entry points under Node.js. Never bundle them
 // or import Terminal as an ESM named export in the production entry point.
-const { spawn } = require("node-pty") as typeof import("node-pty");
+// SAFETY: node-pty publishes spawn as a CommonJS property with its declared signature.
+const { spawn } = require("node-pty") as { spawn: typeof spawnPty };
+// SAFETY: @xterm/headless exposes Terminal as a CommonJS property.
 const { Terminal } = require("@xterm/headless") as {
   Terminal: typeof HeadlessTerminal;
 };
@@ -82,7 +84,7 @@ function requireExecution(): void {
 }
 
 function encodeKey(key: string): string {
-  const keys: Record<string, string> = {
+  const keys = {
     Enter: "\r", Tab: "\t", Escape: "\x1b", Backspace: "\x7f",
     ArrowUp: "\x1b[A", ArrowDown: "\x1b[B",
     ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D",
@@ -91,7 +93,8 @@ function encodeKey(key: string): string {
     "Ctrl+C": "\x03", "Ctrl+D": "\x04", "Ctrl+Z": "\x1a",
     "Ctrl+L": "\x0c", "Ctrl+U": "\x15",
   };
-  if (Object.hasOwn(keys, key)) return keys[key] ?? "";
+  const known = Object.entries(keys).find(([name]) => name === key)?.[1];
+  if (known !== undefined) return known;
   if (key.length === 1) return key;
   throw new Error("Unsupported key: " + key);
 }
