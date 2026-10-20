@@ -16,7 +16,8 @@
     "lint:fix": "vp lint src/ scripts/ --fix",
     "format": "vp fmt \"src/**/*.ts\" \"scripts/**/*.mts\"",
     "format:check": "vp fmt --check \"src/**/*.ts\" \"scripts/**/*.mts\"",
-    "verify:skill-package": "node scripts/verify-skill-package.mts"
+    "verify:skill-package": "node scripts/verify-skill-package.mts",
+    "test:smoke": "npm run build && node scripts/smoke-stdio.mts"
   },
   "keywords": [
     "mcp",
