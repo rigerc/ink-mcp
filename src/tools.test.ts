@@ -13,6 +13,7 @@ async function connect() {
   client = new Client({ name: "test-client", version: "1.0.0" });
   await server.connect(b);
   await client.connect(a);
+
   return client;
 }
 
@@ -44,20 +45,24 @@ describe("Ink development MCP tools", () => {
 
   it("inspects local package manifests", async () => {
     const connected = await connect();
+
     const response = await connected.callTool({
       name: "ink_project_inspect",
       arguments: { projectRoot: "." },
     });
+
     expect(response.isError).toBeFalsy();
     expect(response.structuredContent).toMatchObject({ name: "ink-dev-mcp" });
   });
 
   it("returns matching curated Ink docs", async () => {
     const connected = await connect();
+
     const response = await connected.callTool({
       name: "ink_docs_search",
       arguments: { query: "useInput keyboard" },
     });
+
     expect(response.isError).toBeFalsy();
     expect(JSON.stringify(response.structuredContent)).toContain("useInput");
   });
@@ -66,24 +71,33 @@ describe("Ink development MCP tools", () => {
     const connected = await connect();
     const previous = process.env.INK_MCP_ALLOW_EXECUTION;
     delete process.env.INK_MCP_ALLOW_EXECUTION;
+
     try {
       const response = await connected.callTool({
         name: "ink_run_start",
-        arguments: { projectRoot: ".", executable: "node", args: ["--version"] },
+        arguments: {
+          projectRoot: ".",
+          executable: "node",
+          args: ["--version"],
+        },
       });
+
       expect(response.isError).toBe(true);
       expect(JSON.stringify(response.structuredContent)).toContain("disabled");
     } finally {
-      if (previous !== undefined) process.env.INK_MCP_ALLOW_EXECUTION = previous;
+      if (previous !== undefined)
+        process.env.INK_MCP_ALLOW_EXECUTION = previous;
     }
   });
 
   it("rejects an unknown runtime handle", async () => {
     const connected = await connect();
+
     const response = await connected.callTool({
       name: "ink_run_screen",
       arguments: { runId: "missing" },
     });
+
     expect(response.isError).toBe(true);
   });
 });

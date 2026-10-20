@@ -8,25 +8,38 @@ import { registry } from "./runtime/registry.ts";
 
 const config = getConfig();
 const instructions = getSkillsInstructions();
-const handle = serveStdio(() => {
-  const server = new McpServer(
-    { name: config.SERVER_NAME, version: config.SERVER_VERSION },
-    instructions ? { instructions } : undefined,
-  );
-  registerTools(server);
-  registerSkills(server);
-  server.server.onclose = () => registry.close();
-  return server;
-}, {
-  onerror: (error) => process.stderr.write("MCP protocol error: " + error.message + "\n"),
-});
+
+const handle = serveStdio(
+  () => {
+    const server = new McpServer(
+      { name: config.SERVER_NAME, version: config.SERVER_VERSION },
+      instructions ? { instructions } : undefined,
+    );
+
+    registerTools(server);
+    registerSkills(server);
+    server.server.onclose = () => registry.close();
+
+    return server;
+  },
+  {
+    onerror: (error) =>
+      process.stderr.write("MCP protocol error: " + error.message + "\n"),
+  },
+);
 
 let closing = false;
+
 const shutdown = () => {
   if (closing) return;
   closing = true;
   registry.close();
-  void handle.close().then(() => process.exit(0), () => process.exit(1));
+  void handle.close().then(
+    () => process.exit(0),
+    () => process.exit(1),
+  );
 };
+
 process.once("SIGINT", shutdown);
+
 process.once("SIGTERM", shutdown);
