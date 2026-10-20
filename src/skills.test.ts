@@ -13,7 +13,7 @@ import {
   registerSkills,
 } from "./skills.ts";
 
-const EXAMPLE_SKILL_URI = "skill://example-server/SKILL.md";
+const EXAMPLE_SKILL_URI = "skill://ink-development/SKILL.md";
 const ignoreExcess = { onExcessProperty: "ignore" } as const;
 
 const JsonRpcResponseSchema = Schema.Struct({
@@ -147,7 +147,7 @@ async function request(
   )(JSON.parse(payload));
 }
 
-describe("example skill extension", () => {
+describe("ink development skill extension", () => {
   it("advertises the extension and instructions through server/discover", async () => {
     const response = await request("server/discover");
     expect(response.error).toBeUndefined();
@@ -176,7 +176,7 @@ describe("example skill extension", () => {
 
     const skill = listResult.skills[0];
     expect(skill.uri).toBe(EXAMPLE_SKILL_URI);
-    expect(skill.frontmatter.name).toBe("example-server");
+    expect(skill.frontmatter.name).toBe("ink-development");
     expect(skill.frontmatter.description).toContain("echo and elicit_echo");
     expect(skill.resources).toHaveLength(1);
     expect(skill.resources[0]).toMatchObject({ uri: EXAMPLE_SKILL_URI });
@@ -231,56 +231,56 @@ describe("example skill extension", () => {
 describe("parseFrontmatter", () => {
   it("parses a standard LF frontmatter block", () => {
     const frontmatter = parseFrontmatter(
-      "---\nname: example-server\ndescription: An example skill.\n---\nBody text.",
+      "---\nname: ink-development\ndescription: An example skill.\n---\nBody text.",
     );
 
     expect(frontmatter).toMatchObject({
-      name: "example-server",
+      name: "ink-development",
       description: "An example skill.",
     });
   });
 
   it("tolerates trailing whitespace on the closing fence line", () => {
     const frontmatter = parseFrontmatter(
-      "---\nname: example-server\ndescription: An example skill.\n---   \nBody text.",
+      "---\nname: ink-development\ndescription: An example skill.\n---   \nBody text.",
     );
 
     expect(frontmatter).toMatchObject({
-      name: "example-server",
+      name: "ink-development",
       description: "An example skill.",
     });
   });
 
   it("tolerates CRLF line endings throughout the document", () => {
     const frontmatter = parseFrontmatter(
-      "---\r\nname: example-server\r\ndescription: An example skill.\r\n---\r\nBody text.",
+      "---\r\nname: ink-development\r\ndescription: An example skill.\r\n---\r\nBody text.",
     );
 
     expect(frontmatter).toMatchObject({
-      name: "example-server",
+      name: "ink-development",
       description: "An example skill.",
     });
   });
 
   it("tolerates CRLF with trailing whitespace on the closing fence line", () => {
     const frontmatter = parseFrontmatter(
-      "---\r\nname: example-server\r\ndescription: An example skill.\r\n---  \r\nBody text.",
+      "---\r\nname: ink-development\r\ndescription: An example skill.\r\n---  \r\nBody text.",
     );
 
     expect(frontmatter).toMatchObject({
-      name: "example-server",
+      name: "ink-development",
       description: "An example skill.",
     });
   });
 
   it("still throws when there is no opening frontmatter marker", () => {
-    expect(() => parseFrontmatter("name: example-server\n---\n")).toThrow(
+    expect(() => parseFrontmatter("name: ink-development\n---\n")).toThrow(
       "Skill SKILL.md must start with YAML frontmatter",
     );
   });
 
   it("still throws when there is no closing frontmatter marker", () => {
-    expect(() => parseFrontmatter("---\nname: example-server\n")).toThrow(
+    expect(() => parseFrontmatter("---\nname: ink-development\n")).toThrow(
       "Skill SKILL.md has no closing YAML frontmatter marker",
     );
   });
@@ -305,17 +305,17 @@ describe("skills directory opt-out", () => {
 
   it("rejects a text skill file that is not valid UTF-8", () => {
     const root = mkdtempSync(join(tmpdir(), "bad-utf8-skill-"));
-    const skillDir = join(root, "example-server");
+    const skillDir = join(root, "ink-development");
     mkdirSync(skillDir);
     writeFileSync(
       join(skillDir, "SKILL.md"),
-      "---\nname: example-server\ndescription: An example skill.\n---\nBody\n",
+      "---\nname: ink-development\ndescription: An example skill.\n---\nBody\n",
     );
     writeFileSync(join(skillDir, "notes.md"), Buffer.from([0xff, 0xfe]));
 
     try {
       expect(() => loadSkillCatalog(root)).toThrow(
-        "Skill file example-server/notes.md is not valid UTF-8",
+        "Skill file ink-development/notes.md is not valid UTF-8",
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -324,11 +324,11 @@ describe("skills directory opt-out", () => {
 
   it("publishes a non-text file that is not UTF-8", () => {
     const root = mkdtempSync(join(tmpdir(), "binary-skill-"));
-    const skillDir = join(root, "example-server");
+    const skillDir = join(root, "ink-development");
     mkdirSync(skillDir);
     writeFileSync(
       join(skillDir, "SKILL.md"),
-      "---\nname: example-server\ndescription: An example skill.\n---\nBody\n",
+      "---\nname: ink-development\ndescription: An example skill.\n---\nBody\n",
     );
     writeFileSync(join(skillDir, "blob.bin"), Buffer.from([0xff, 0xfe]));
 
