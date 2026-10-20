@@ -1,279 +1,107 @@
-# MCP TypeScript Template
+# Ink Dev MCP
 
-A TypeScript template for building remote Model Context Protocol (MCP) servers with modern tooling and best practices while leveraging the [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk).
+Local **stdio-only** MCP server for inspecting, exercising and debugging React/Ink terminal applications.
 
-## Features
+## Install
 
-This template provides:
+Requires Node.js 24.11+ and a native build toolchain for node-pty (Python, make, C/C++ compiler).
 
-- **TypeScript 7** - Native compiler with strict configuration; TypeScript 6 remains available as `tsc6`
-- **Effect** - Typed configuration, validation, logging, error handling, and async workflows
-- **Vite+** - Build, test, lint, and format through the `vp` CLI (Vite, Vitest, Oxlint, and Oxfmt). npm script names stay the same
-- **Express** - Fast, unopinionated web framework for HTTP server
-- **Oxlint anti-slop rules** - Vendored custom plugins in `tools/oxlint/anti-slop`, loaded by Vite+
-- **Docker** - Containerization support
-- **Example Tools** - `echo` and `elicit_echo` tools demonstrating tool implementation, structured output, annotations, and MCP elicitation
-- **Example Agent Skill** - `example-server` published through the MCP Skills extension (`skills/list`, `skills/get`, and `resources/read`)
-
-## Getting Started
-
-The easiest way to get started is using `degit`:
-
-1. **Create a new project from this template**
-
-   ```bash
-   npx degit nickytonline/mcp-typescript-template my-mcp-server
-   cd my-mcp-server
-   ```
-
-2. **Install dependencies**
-
-   ```bash
-   npm install
-   ```
-
-3. **Build the project**
-
-   ```bash
-   npm run build
-   ```
-
-4. **Start the server**
-   ```bash
-   npm start
-   ```
-
-The server will be available at `http://localhost:3000` for MCP connections.
-
-### Alternative: Using GitHub Template
-
-You can also click the "Use this template" button on GitHub to create a new repository, then clone it:
-
-```bash
-git clone <your-repo-url>
-cd my-mcp-server
+~~~sh
 npm install
-```
+npm run build
+~~~
+
+Configure your MCP client to spawn the server over stdio:
+
+~~~json
+{
+  "mcpServers": {
+    "ink-dev": {
+      "command": "node",
+      "args": ["/absolute/path/to/ink-mcp/dist/index.js"],
+      "env": {
+        "INK_MCP_WORKSPACE_ROOT": "/absolute/path/to/workspace",
+        "INK_MCP_ALLOW_EXECUTION": "1"
+      }
+    }
+  }
+}
+~~~
+
+This is **not** an HTTP service. It does not listen on a port and must not print diagnostics to stdout.
+
+## MCP tools
+
+| Tool | Description |
+|---|---|
+| ink_project_inspect | Inspect package dependencies, scripts and Ink/React versions |
+| ink_project_validate | Find missing dependencies and version compatibility issues |
+| ink_docs_search | Query bundled Ink reference snippets; no network requests |
+| ink_run_start | Start an Ink CLI with a real pseudoterminal |
+| ink_run_screen | Inspect the current visible screen using xterm/headless |
+| ink_run_keys | Send text, arrows, Enter, Escape, Tab, Backspace and Ctrl keys |
+| ink_run_resize | Resize the PTY and screen emulator |
+| ink_run_wait | Wait for text, screen change, stability or exit |
+| ink_run_output | Retrieve bounded raw PTY output (combined stdout/stderr) |
+| ink_run_status | Inspect process state and exit code |
+| ink_run_stop | Terminate and clean up a run |
+
+## Example development loop
+
+1. Call ink_project_inspect with projectRoot ".".
+2. Call ink_run_start with projectRoot ".", executable "node" and args ["dist/cli.js"].
+3. Use ink_run_wait with condition "text_present" and the expected prompt.
+4. Send keys with ink_run_keys (for example ["ArrowDown", "Enter"]).
+5. Inspect the current screen with ink_run_screen, and verify the expected result.
+6. Stop the process with ink_run_stop.
+
+Run handles persist across MCP calls until explicitly stopped or until the server disconnects.
+The screen snapshot is the current terminal viewport, not raw output with ANSI stripped.
+
+## Local execution safety
+
+PTY code execution is **disabled by default**. Set INK_MCP_ALLOW_EXECUTION=1 to enable it.
+INK_MCP_WORKSPACE_ROOT defaults to the server working directory and restricts project paths.
+The server bounds simultaneous processes, history, terminal dimensions, user input and waits.
+
+**Local code execution is not sandboxed.** A trusted project's executable has the user's
+permissions. Do not use this server to execute untrusted projects. Do not expose the stdio
+process through a network bridge without separately designing isolation and authentication.
+
+## ESM and CommonJS
+
+The published @xterm/headless package has a CommonJS entry point that may fail when
+imported with ESM named exports on Node 24. The runtime uses createRequire(import.meta.url)
+to load it and node-pty, and Vite leaves both dependencies external.
 
 ## Development
 
-Node.js 24.11 or newer. Vite+ does not run on earlier Node 24 releases. `npm start` still runs `node dist/index.js`, and the bundle target stays Node 24.
-
-[mise](https://mise.jdx.dev/) users get that runtime from `mise.toml` (`node = "24"`). Vite+ does not read `mise.toml`. The project-local `vp` binary uses the Node already on PATH; a global `vp` install is not required.
-
-### Type checking
-
-`npm run typecheck` uses the TypeScript 7 compiler. The `typescript` package remains an npm alias for the TypeScript 6 compatibility package and is available as `tsc6` when needed.
-
-### Watch mode for development (with hot reloading)
-
-```bash
-npm run dev
-```
-
-### Build the project
-
-```bash
-npm run build
-```
-
-### Linting
-
-- Lint the project
-
-```bash
+~~~sh
 npm run lint
-```
-
-- Fix all auto-fixable lint errors
-
-```bash
-npm run lint:fix
-```
-
-### Formatting
-
-- Format files in the project
-
-```bash
-npm run format
-```
-
-- Check formatting
-
-```bash
 npm run format:check
-```
+npm run build
+npm run test:ci
+npm run test:smoke
+npm run verify:skill-package
+~~~
 
-## Testing Your MCP Server
+The smoke test launches the **compiled** dist/index.js over MCP stdio and checks tool discovery.
+This protects against type-check-passing but runtime-failing ESM import regressions.
 
-You can test your MCP server using the [MCP Inspector](https://github.com/modelcontextprotocol/inspector):
+Use MCP Inspector to exercise the server:
 
-```bash
-npx @modelcontextprotocol/inspector
-```
+~~~sh
+npx @modelcontextprotocol/inspector node ./dist/index.js
+~~~
 
-This will launch a web interface that allows you to:
+Documentation guidance is bundled and indicative. Verify API details against the exact
+Ink version installed in the target project.
 
-- Connect to your MCP server
-- Test your tools interactively
-- View request/response messages
-- Debug your MCP implementation
+## Repo structure
 
-Make sure your server is running (using `npm start` or `npm run dev`) before connecting with the inspector.
-
-## Available Tools
-
-The template includes two example tools:
-
-### echo
-
-Echoes back the provided message - a simple example to demonstrate MCP tool implementation.
-
-**Parameters:**
-
-- `message` (string) - The message to echo back
-
-### elicit_echo
-
-Demonstrates [MCP elicitation](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation): the tool takes no input, asks the connected client to prompt the user for a message, then echoes it back. Handles all three elicitation outcomes (accept, decline, cancel) and errors when the client doesn't support elicitation.
-
-Both tools declare an `outputSchema` and return `structuredContent` alongside the text result, and carry `annotations` (`readOnlyHint`, `idempotentHint`, `openWorldHint`) describing their safety profile.
-
-## Agent skill
-
-The template bundles an [example Agent Skill](skills/example-server/SKILL.md) that tells a client how to use `echo` and `elicit_echo`, and how to replace that guidance. On protocol revision `2026-07-28` or later, `server/discover` advertises `io.modelcontextprotocol/skills`. Clients that support the extension call `skills/list` or `skills/get` for `skill://example-server/SKILL.md`, then read the same bytes with `resources/read`. The listing includes a file manifest with SHA-256 digests and byte sizes, plus `ttlMs` and `cacheScope` freshness hints. Directory reads are left unimplemented.
-
-Add another skill by creating `skills/<name>/SKILL.md` whose frontmatter `name` matches `<name>`. The server publishes valid, non-hidden skill directories under `skills/`. Coding skills in `.agents/skills/` stay local to this repository and are separate from the skills the running server publishes.
-
-A digest match checks that fetched bytes match the server's manifest. Reading a resource returns those bytes; the host decides whether to verify, approve, and load the skill. See [docs/AGENT_SKILLS.md](docs/AGENT_SKILLS.md).
-
-## Customizing Your MCP Server
-
-1. **Update package.json** - Change `name`, `version`, description, and keywords. The MCP server name and version are read from `name` and `version` unless `SERVER_NAME` or `SERVER_VERSION` is set
-2. **Modify src/tools.ts** - Replace the `echo` / `elicit_echo` tools with your custom tools
-3. **Replace skills/example-server** - Add your own `skills/<name>/SKILL.md` and remove the example once it no longer describes the server. Delete every skill directory, leaving `skills/` in place, to publish none
-4. **Add your logic** - Create additional TypeScript files for your business logic
-5. **Update README** - Document your specific MCP server functionality
-
-## Docker
-
-Build and run using Docker:
-
-- Build the Docker image
-
-```bash
-docker build -t my-mcp-server .
-```
-
-- Run the container
-
-```bash
-docker run -p 3000:3000 my-mcp-server
-```
-
-### Docker Compose
-
-A `docker-compose.yml` is included with a health check pre-configured:
-
-```bash
-docker compose up --build
-```
-
-## Project Structure
-
-```
-mcp-typescript-template/
-├── src/
-│   ├── app.ts            # Express app and MCP Node adapter wiring
-│   ├── app.test.ts       # HTTP boundary integration tests
-│   ├── index.ts          # Effect startup and shutdown
-│   ├── tools.ts          # Tool registration (registerTools) and logic
-│   ├── tools.test.ts     # Integration tests (in-memory client/server)
-│   ├── skills.ts         # Bundled Agent Skills and MCP Skills extension
-│   ├── skills.test.ts    # Skill discovery, manifest, and resource tests
-│   ├── config.ts         # Env var loading and validation (Effect Config)
-│   ├── logger.ts         # Effect structured logging
-│   └── lib/
-│       ├── utils.ts      # MCP response helpers
-│       ├── mcp-schema.ts  # Effect Schema → MCP Standard Schema adapter
-│       ├── utils.test.ts # Unit tests
-│       └── mcp-schema.test.ts # Schema adapter and dialect tests
-├── skills/
-│   └── example-server/SKILL.md  # Example Agent Skill published by the server
-├── docs/AGENT_SKILLS.md  # Discovery, security, packaging, and compatibility
-├── dist/                 # Built output (generated)
-├── tsconfig.json         # TypeScript configuration
-├── vite.config.ts        # Vite+ build, lint, and format configuration
-├── mise.toml             # Node 24 pin for mise
-├── Dockerfile            # Docker configuration
-└── package.json          # Dependencies and scripts
-```
-
-## Architecture
-
-This template follows a simple architecture:
-
-- **HTTP Transport** - Uses Express with `createMcpHandler` (`@modelcontextprotocol/server`) for remote MCP connections
-- **Stateless** - Per the MCP 2026-07-28 spec: no session handshake or session ID; the app creates a fresh server per request and supports older clients through the SDK fallback
-- **Tool Registration** - `registerTools(server)` in `src/tools.ts` is the single source of truth for tool wiring; `getServer()` and the tests both use it
-- **Agent Skills** - `registerSkills(server)` in `src/skills.ts` publishes `skills/` through MCP resources and the `io.modelcontextprotocol/skills` extension
-- **Typed I/O** - Effect Schema `inputSchema`/`outputSchema` values adapted to MCP Standard Schema, plus `structuredContent` for typed results
-- **JSON Schema Dialects** - The adapter supports both MCP-requested `draft-07` and `draft-2020-12` output
-- **Error Handling** - Genuine tool execution failures return `isError: true` via `createErrorResult` rather than being thrown; protocol, transport, and capability failures (e.g. an unsupported elicitation) can still reject the client call
-- **Health Check** - `GET /health` is a plain liveness endpoint (used by the Docker health check); `GET /mcp` is routed to the MCP handler itself
-
-## Example: Adding a New Tool
-
-Add the registration inside `registerTools()` in `src/tools.ts`. See the `create-mcp-tool` skill (`.agents/skills/create-mcp-tool`) for the full walkthrough.
-
-```typescript
-import type {
-  CallToolResult,
-  ServerContext,
-} from "@modelcontextprotocol/server";
-import { Effect, Schema } from "effect";
-import { toMcpSchema } from "./lib/mcp-schema.ts";
-import { createTextResult, runMcpEffect } from "./lib/utils.ts";
-
-server.registerTool(
-  "my_tool",
-  {
-    title: "My Custom Tool",
-    description: "Description of what this tool does",
-    inputSchema: toMcpSchema(
-      Schema.Struct({
-        param1: Schema.String,
-        param2: Schema.optional(Schema.Number),
-      }),
-    ),
-    outputSchema: toMcpSchema(Schema.Struct({ output: Schema.String })),
-    annotations: { readOnlyHint: true, openWorldHint: false },
-  },
-  (args, ctx) => runMcpEffect(myTool(args, ctx)),
-);
-
-function myTool(
-  args: { param1: string; param2?: number },
-  _ctx: ServerContext,
-): Effect.Effect<CallToolResult> {
-  return Effect.succeed(createTextResult({ output: args.param1 }));
-}
-```
-
-Keep the tool workflow in `Effect` and use `runMcpEffect()` only where it crosses back into the MCP SDK callback API. For asynchronous work, use `Effect.tryPromise`; for independent parallel work, use `Effect.all` with explicit concurrency.
-
-## Why Express?
-
-This template uses Express for the HTTP server, which provides:
-
-- **MCP SDK Compatibility** - Full compatibility with `@modelcontextprotocol/server`'s `createMcpHandler`, adapted to Node/Express via `@modelcontextprotocol/node`'s `toNodeHandler`
-- **Mature & Stable** - Battle-tested HTTP server with extensive ecosystem
-- **TypeScript Support** - Excellent TypeScript support with comprehensive type definitions
-- **Middleware Ecosystem** - Rich ecosystem of middleware for common tasks
-- **Documentation** - Comprehensive documentation and community support
-- **Reliability** - Proven reliability for production applications
-
-## Repository Guidelines
-
-Contributors should review `AGENTS.md` for project structure, coding standards, and pull request expectations before opening changes.
+- src/index.ts — stdio entry point
+- src/tools.ts — MCP tool registration and validated schemas
+- src/runtime/registry.ts — PTY lifecycle and headless terminal screen
+- src/runtime/project.ts — project analysis and curated documentation
+- src/skills.ts and skills/ — agent skill publishing
+- scripts/smoke-stdio.mts — compiled entry-point integration test
