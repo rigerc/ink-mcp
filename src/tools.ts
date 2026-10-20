@@ -1,17 +1,17 @@
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server";
 import { Effect, Schema } from "effect";
-import { JsonObjectSchema } from "./lib/json.ts";
+import type { JsonObject } from "./lib/json.ts";
 import { toMcpSchema } from "./lib/mcp-schema.ts";
 import { createErrorResult, createTextResult, runMcpEffect } from "./lib/utils.ts";
 import { registry } from "./runtime/registry.ts";
 import { inspectProject, validateProject, searchDocs } from "./runtime/project.ts";
 
-function execute(work: () => Promise<unknown> | unknown): Promise<CallToolResult> {
+function execute(work: () => Promise<JsonObject> | JsonObject): Promise<CallToolResult> {
   return runMcpEffect(Effect.tryPromise({
     try: async () => work(),
     catch: (error) => error,
   }).pipe(
-    Effect.map((value) => createTextResult(Schema.decodeUnknownSync(JsonObjectSchema)(value))),
+    Effect.map((value) => createTextResult(value)),
     Effect.catch((error) => Effect.succeed(createErrorResult({
       error: error instanceof Error ? error.message : String(error),
     }))),
