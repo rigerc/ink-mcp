@@ -15,6 +15,7 @@ type PackageManifest = {
 function readManifest(root: string): PackageManifest {
   const path = join(root, "package.json");
   if (!existsSync(path)) throw new Error("No package.json found in project directory");
+  // SAFETY: package.json is an untrusted manifest; optional fields are checked before use.
   return JSON.parse(readFileSync(path, "utf8")) as PackageManifest;
 }
 
@@ -28,6 +29,7 @@ export function inspectProject(projectRoot: string) {
     const path = join(root, "node_modules", name, "package.json");
     if (!existsSync(path)) return null;
     try {
+      // SAFETY: package version is optional and only used for diagnostics.
       return (JSON.parse(readFileSync(path, "utf8")) as { version?: string }).version ?? null;
     } catch {
       return null;
@@ -89,10 +91,11 @@ const documents = [
 export function searchDocs(query: string, version?: string, limit = 5) {
   const words = query.toLowerCase().split(/\W+/).filter(Boolean);
   if (!words.length) throw new Error("Documentation query must not be empty");
-  const matches = documents.map((doc) => {
+  const matches = documents.flatMap((doc) => {
     const haystack = (doc.title + " " + doc.terms + " " + doc.text).toLowerCase();
-    return { doc, score: words.reduce((sum, word) => sum + (haystack.includes(word) ? 1 : 0), 0) };
-  }).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(limit, 10)));
+    const score = words.reduce((sum, word) => sum + (haystack.includes(word) ? 1 : 0), 0);
+    return score > 0 ? [{ doc, score }] : [];
+  }).sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(limit, 10)));
   const tag = version?.match(/^\d+(?:\.\d+){0,2}$/) ? "v" + version : "master";
   return {
     query, version: version ?? "not specified",
