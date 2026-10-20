@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [resolve("dist/index.js")],
-  env: { ...process.env, INK_MCP_ALLOW_EXECUTION: "0" },
   stderr: "pipe",
 });
 const client = new Client({ name: "ink-dev-smoke", version: "0.1.0" });
