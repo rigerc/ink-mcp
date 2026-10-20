@@ -177,7 +177,7 @@ describe("ink development skill extension", () => {
     const skill = listResult.skills[0];
     expect(skill.uri).toBe(EXAMPLE_SKILL_URI);
     expect(skill.frontmatter.name).toBe("ink-development");
-    expect(skill.frontmatter.description).toContain("echo and elicit_echo");
+    expect(skill.frontmatter.description).toContain("develop");
     expect(skill.resources).toHaveLength(1);
     expect(skill.resources[0]).toMatchObject({ uri: EXAMPLE_SKILL_URI });
 
@@ -207,7 +207,7 @@ describe("ink development skill extension", () => {
 
     if (!contents) throw new Error("expected skill text");
     const bytes = Buffer.from(contents.text, "utf8");
-    expect(contents.text).toContain("# Example MCP server");
+    expect(contents.text).toContain("# Ink development with MCP tools");
     expect(skill.resources[0].size).toBe(bytes.byteLength);
     expect(skill.resources[0].digest).toBe(
       `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
