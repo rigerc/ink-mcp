@@ -2,7 +2,6 @@ import { Config as EffectConfig, ConfigProvider, Effect } from "effect";
 import packageJson from "../package.json" with { type: "json" };
 
 const configEffect = EffectConfig.all({
-  PORT: EffectConfig.Number("PORT").pipe(EffectConfig.withDefault(3000)),
   NODE_ENV: EffectConfig.Literals(
     ["development", "production", "test"],
     "NODE_ENV",
@@ -22,24 +21,21 @@ const configEffect = EffectConfig.all({
 export type Config = Effect.Success<typeof configEffect>;
 
 const loadConfig = configEffect.parse(ConfigProvider.fromEnv());
-
-let config: Config | undefined;
-
-function failInvalidConfig(cause: unknown): never {
-  process.stderr.write(`Invalid environment configuration: ${String(cause)}\n`);
-  process.exit(1);
-}
+let cached: Config | undefined;
 
 export function getConfig(): Config {
-  if (!config) {
+  if (!cached) {
     try {
-      config = Effect.runSync(loadConfig);
+      cached = Effect.runSync(loadConfig);
     } catch (error) {
-      return failInvalidConfig(error);
+      process.stderr.write(
+        "Invalid environment configuration: " + String(error) + "\n",
+      );
+      process.exit(1);
     }
   }
 
-  return config;
+  return cached;
 }
 
 export function isProduction(): boolean {

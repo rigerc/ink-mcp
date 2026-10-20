@@ -1,220 +1,243 @@
-import type {
-  CallToolResult,
-  InputRequiredResult,
-  McpServer,
-  ServerContext,
-} from "@modelcontextprotocol/server";
-import { inputRequired, inputResponse } from "@modelcontextprotocol/server";
-import { Effect, Result, Schema } from "effect";
+import type { CallToolResult, McpServer } from "@modelcontextprotocol/server";
+import { Effect, Schema } from "effect";
+import type { JsonObject } from "./lib/json.ts";
 import { toMcpSchema } from "./lib/mcp-schema.ts";
 import {
   createErrorResult,
   createTextResult,
   runMcpEffect,
 } from "./lib/utils.ts";
-import { logger } from "./logger.ts";
+import { registry } from "./runtime/registry.ts";
+import {
+  inspectProject,
+  validateProject,
+  searchDocs,
+} from "./runtime/project.ts";
 
-const ELICIT_ECHO_MESSAGE_KEY = "message";
-
-const ElicitEchoOutputSchema = toMcpSchema(
-  Schema.Struct({
-    echo: Schema.NullOr(Schema.String).annotate({
-      description: "The echoed message, or null if none was provided",
-    }),
-    reason: Schema.optional(
-      Schema.String.annotate({
-        description: "Why no message was echoed, when applicable",
-      }),
+function execute(
+  work: () => Promise<JsonObject> | JsonObject,
+): Promise<CallToolResult> {
+  return runMcpEffect(
+    Effect.tryPromise({
+      try: async () => work(),
+      catch: (error) => error,
+    }).pipe(
+      Effect.map((value) => createTextResult(value)),
+      Effect.catch((error) =>
+        Effect.succeed(
+          createErrorResult({
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        ),
+      ),
     ),
-  }),
-);
+  );
+}
 
-const EchoInputSchema = toMcpSchema(
-  Schema.Struct({
-    message: Schema.String.annotate({
-      description: "The message to echo back",
-    }),
-  }),
-);
+const projectInput = toMcpSchema(Schema.Struct({ projectRoot: Schema.String }));
+const runInput = toMcpSchema(Schema.Struct({ runId: Schema.String }));
+const readonly = {
+  readOnlyHint: true,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+const mutating = { readOnlyHint: false, openWorldHint: false };
 
-const EchoOutputSchema = toMcpSchema(
-  Schema.Struct({
-    echo: Schema.String.annotate({ description: "The echoed message" }),
-  }),
-);
-
-const AcceptedElicitationSchema = Schema.Struct({
-  message: Schema.String,
-});
-
-/**
- * Registers all MCP tools on the server.
- * Called once per request from getServer() in src/index.ts (the 2026-07-28
- * spec serves each request from a fresh instance — there is no per-connection
- * session to register tools once for).
- */
 export function registerTools(server: McpServer): void {
   server.registerTool(
-    "elicit_echo",
+    "ink_project_inspect",
     {
-      title: "Elicit Echo",
-      description: "Ask the user what they want to echo back, then echoes it",
-      // `outputSchema` lets clients validate and consume `structuredContent`
-      // (see createTextResult). The echo may be null when the user declines or
-      // cancels, so `echo` is nullable and not required.
-      // https://modelcontextprotocol.io/specification/2025-06-18/server/tools#output-schema
-      outputSchema: ElicitEchoOutputSchema,
-      // Annotations are untrusted hints clients use for UX/safety. This tool
-      // neither mutates state nor touches the outside world.
-      // https://modelcontextprotocol.io/specification/2025-06-18/server/tools#tool
-      annotations: {
-        readOnlyHint: true,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
+      title: "Inspect Ink Project",
+      description:
+        "Inspect local package.json for Ink/React versions, package scripts and entrypoints without executing project code.",
+      inputSchema: projectInput,
+      annotations: readonly,
     },
-    (ctx) => runMcpEffect(elicitEcho(ctx)),
+    ({ projectRoot }) => execute(() => inspectProject(projectRoot)),
   );
 
   server.registerTool(
-    "echo",
+    "ink_project_validate",
     {
-      title: "Echo",
-      description: "Echo back the provided message",
-      inputSchema: EchoInputSchema,
-      outputSchema: EchoOutputSchema,
-      annotations: {
-        readOnlyHint: true,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
+      title: "Validate Ink Project",
+      description:
+        "Check local Ink and React dependency compatibility and identify common project setup issues.",
+      inputSchema: projectInput,
+      annotations: readonly,
     },
-    (args, ctx) => runMcpEffect(echo(args, ctx)),
+    ({ projectRoot }) => execute(() => validateProject(projectRoot)),
   );
-}
 
-/**
- * Asks the user what they want to echo via MCP elicitation, then echoes it
- * back. This is a multi-round-trip tool (protocol revision 2026-07-28): the
- * first call has no `inputResponses` yet, so it returns an `inputRequired()`
- * result carrying the embedded elicitation request. The client resolves that
- * and retries the same tool call with the response attached — this handler
- * runs again and reads it via `ctx.mcpReq.inputResponses` to produce the
- * final result. (The older push-style `elicitInput()` call throws on a
- * 2026-07-28-era request, which is why this can't be a single synchronous
- * await like it was under the previous stateful spec.)
- */
-function elicitEcho(
-  ctx: ServerContext,
-): Effect.Effect<CallToolResult | InputRequiredResult> {
-  return Effect.gen(function* () {
-    const toolName = "elicit_echo";
-    const requestId = ctx.mcpReq.id;
+  server.registerTool(
+    "ink_docs_search",
+    {
+      title: "Search Ink Guidance",
+      description:
+        "Search curated local reference snippets for Ink components and hooks. No network fetch is performed.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          query: Schema.String,
+          version: Schema.optional(Schema.String),
+          limit: Schema.optional(Schema.Number),
+        }),
+      ),
+      annotations: readonly,
+    },
+    ({ query, version, limit }) =>
+      execute(() => searchDocs(query, version, limit)),
+  );
 
-    const response = inputResponse(
-      ctx.mcpReq.inputResponses,
-      ELICIT_ECHO_MESSAGE_KEY,
-    );
+  server.registerTool(
+    "ink_run_start",
+    {
+      title: "Start Ink CLI",
+      description:
+        "Launch a CLI in a real PTY. Requires INK_MCP_ALLOW_EXECUTION=1; returns a persistent runId.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          projectRoot: Schema.String,
+          executable: Schema.String,
+          args: Schema.optional(Schema.Array(Schema.String)),
+          cols: Schema.optional(Schema.Number),
+          rows: Schema.optional(Schema.Number),
+          env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+        }),
+      ),
+      annotations: mutating,
+    },
+    ({ projectRoot, executable, args, cols, rows, env }) =>
+      execute(() =>
+        registry.start({
+          projectRoot,
+          executable,
+          args: args ? [...args] : undefined,
+          cols,
+          rows,
+          env,
+        }),
+      ),
+  );
 
-    if (response.kind === "missing") {
-      return inputRequired({
-        inputRequests: {
-          [ELICIT_ECHO_MESSAGE_KEY]: inputRequired.elicit({
-            message: "What would you like to echo?",
-            // Elicitation `requestedSchema` must be a hand-written, flat JSON
-            // Schema (the restricted subset the MCP spec allows: primitive
-            // properties only, no nesting).
-            // https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation#request-schema
-            requestedSchema: {
-              type: "object",
-              properties: {
-                message: {
-                  type: "string",
-                  title: "Message",
-                  description: "The message to echo back",
-                },
-              },
-              required: ["message"],
-            },
-          }),
-        },
-      });
-    }
+  server.registerTool(
+    "ink_run_screen",
+    {
+      title: "Read Ink Screen",
+      description:
+        "Return the current PTY screen reconstructed by a headless terminal emulator.",
+      inputSchema: runInput,
+      annotations: readonly,
+    },
+    ({ runId }) => execute(() => registry.screen(runId)),
+  );
 
-    // Decline and cancel are valid user outcomes, not errors — return them as
-    // normal results (no isError) so the model treats them as a real answer.
-    if (response.kind !== "elicit") {
-      yield* logger.error(
-        { toolName, requestId, kind: response.kind },
-        "Tool execution failed",
-      );
+  server.registerTool(
+    "ink_run_keys",
+    {
+      title: "Send Terminal Keys",
+      description:
+        "Write text and special keys (Enter, Tab, arrows, Ctrl+C) to a running Ink CLI.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          runId: Schema.String,
+          keys: Schema.Array(Schema.String),
+        }),
+      ),
+      annotations: mutating,
+    },
+    ({ runId, keys }) => execute(() => registry.keys(runId, [...keys])),
+  );
 
-      return createErrorResult({ error: "Expected an elicitation response" });
-    }
+  server.registerTool(
+    "ink_run_resize",
+    {
+      title: "Resize Terminal",
+      description:
+        "Resize a running Ink PTY and its headless emulator to test responsive terminal layouts.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          runId: Schema.String,
+          cols: Schema.Number,
+          rows: Schema.Number,
+        }),
+      ),
+      annotations: mutating,
+    },
+    ({ runId, cols, rows }) =>
+      execute(() => registry.resize(runId, cols, rows)),
+  );
 
-    if (response.action === "decline") {
-      yield* logger.info(
-        { toolName, requestId, action: "decline" },
-        "User declined elicitation",
-      );
+  server.registerTool(
+    "ink_run_wait",
+    {
+      title: "Wait For Ink State",
+      description:
+        "Wait for visible text, screen changes, stable output or process exit, with a bounded timeout.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          runId: Schema.String,
+          condition: Schema.Literals([
+            "text_present",
+            "text_absent",
+            "screen_changed",
+            "screen_stable",
+            "process_exit",
+          ]),
+          text: Schema.optional(Schema.String),
+          since: Schema.optional(Schema.String),
+          stableMs: Schema.optional(Schema.Number),
+          timeoutMs: Schema.optional(Schema.Number),
+        }),
+      ),
+      annotations: readonly,
+    },
+    (args) => execute(() => registry.wait(args)),
+  );
 
-      return createTextResult({
-        echo: null,
-        reason: "User declined to provide a message",
-      });
-    }
+  server.registerTool(
+    "ink_run_output",
+    {
+      title: "Read Raw Terminal Output",
+      description:
+        "Read a bounded raw PTY output slice, with offset and truncation metadata.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          runId: Schema.String,
+          offset: Schema.optional(Schema.Number),
+          limit: Schema.optional(Schema.Number),
+        }),
+      ),
+      annotations: readonly,
+    },
+    ({ runId, offset, limit }) =>
+      execute(() => registry.output(runId, offset, limit)),
+  );
 
-    if (response.action === "cancel") {
-      yield* logger.info(
-        { toolName, requestId, action: "cancel" },
-        "User cancelled elicitation",
-      );
+  server.registerTool(
+    "ink_run_status",
+    {
+      title: "Process Status",
+      description:
+        "Read a managed Ink process status, exit code, and timestamps.",
+      inputSchema: runInput,
+      annotations: readonly,
+    },
+    ({ runId }) => execute(() => registry.status(runId)),
+  );
 
-      return createTextResult({
-        echo: null,
-        reason: "Elicitation was cancelled",
-      });
-    }
-
-    const accepted = Schema.decodeUnknownResult(AcceptedElicitationSchema)(
-      response.content,
-    );
-
-    if (Result.isFailure(accepted)) {
-      yield* logger.warn(
-        { toolName, requestId },
-        "Accept response missing content",
-      );
-
-      return createErrorResult({
-        error: "Accepted but no content was returned",
-      });
-    }
-
-    yield* logger.info({ toolName, requestId }, "Tool executed");
-
-    return createTextResult({ echo: accepted.success.message });
-  });
-}
-
-/**
- * Echoes back the provided message.
- *
- * Server logs go through the Effect logger. MCP logging notifications are
- * deprecated as of protocol revision 2026-07-28 (SEP-2577), and
- * `logging/setLevel` is gone: a server must not emit `notifications/message`
- * unless the request opted in with `io.modelcontextprotocol/logLevel`.
- */
-function echo(
-  args: { message: string },
-  ctx: ServerContext,
-): Effect.Effect<CallToolResult> {
-  return Effect.gen(function* () {
-    const toolName = "echo";
-    const requestId = ctx.mcpReq.id;
-    const data = { echo: args.message };
-    yield* logger.info({ toolName, requestId }, "Tool executed");
-
-    return createTextResult(data);
-  });
+  server.registerTool(
+    "ink_run_stop",
+    {
+      title: "Stop Ink Process",
+      description:
+        "Terminate a managed Ink process and dispose its screen emulator.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          runId: Schema.String,
+          force: Schema.optional(Schema.Boolean),
+        }),
+      ),
+      annotations: mutating,
+    },
+    ({ runId, force }) => execute(() => registry.stop(runId, force)),
+  );
 }
