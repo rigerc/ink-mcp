@@ -52,7 +52,8 @@
     "@types/express": "^5.0.6",
     "effect": "^4.0.3",
     "express": "^5.3.0",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "@xterm/headless": "^6.0.0"
   },
   "overrides": {
     "conventional-changelog-writer": "$conventional-changelog-writer",
