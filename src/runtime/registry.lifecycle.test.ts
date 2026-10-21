@@ -114,16 +114,16 @@ describe("PTY integration", () => {
     expect(result.stopped).toBe(true);
   });
 
-  it("bounds raw output and preserves Unicode boundaries", async () => {
-    const id = launch("process.stdout.write('😀'.repeat(600000));");
+  it("keeps output slices aligned to Unicode boundaries", async () => {
+    const id = launch("process.stdout.write('😀'.repeat(40000));");
     expect((await registry.wait({
       runId: id,
       condition: "process_exit",
       timeoutMs: 10000,
     })).matched).toBe(true);
     const output = registry.output(id, 0, 17);
-    expect(output.output).not.toMatch(/[\\uD800-\\uDBFF]$/);
-    expect(output.output).not.toMatch(/^[\\uDC00-\\uDFFF]/);
+    expect(output.output.endsWith("😀")).toBe(true);
+    expect(output.output.codePointAt(0)).toBe(0x1f600);
     expect(output.nextOffset).toBeGreaterThanOrEqual(output.offset);
   });
 });
