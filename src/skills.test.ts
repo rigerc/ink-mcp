@@ -177,7 +177,7 @@ describe("ink development skill extension", () => {
     const skill = listResult.skills[0];
     expect(skill.uri).toBe(EXAMPLE_SKILL_URI);
     expect(skill.frontmatter.name).toBe("ink-development");
-    expect(skill.frontmatter.description).toContain("develop");
+    expect(skill.frontmatter.description.toLowerCase()).toContain("develop");
     expect(skill.resources).toHaveLength(1);
     expect(skill.resources[0]).toMatchObject({ uri: EXAMPLE_SKILL_URI });
 

@@ -47,18 +47,20 @@ function git(repository: string, args: readonly string[]): string {
   }).trim();
 }
 
+// --no-verify keeps host commit-msg hooks (for example a global commitlint
+// template) from rejecting the fixture commits in the temporary repository.
 function initRepository(): string {
   const repository = mkdtempSync(join(tmpdir(), "image-tags-"));
 
   repositories.push(repository);
   git(repository, ["init", "-b", "main"]);
-  git(repository, ["commit", "--allow-empty", "-m", "init"]);
+  git(repository, ["commit", "--no-verify", "--allow-empty", "-m", "init"]);
 
   return repository;
 }
 
 function commit(repository: string, message: string): string {
-  git(repository, ["commit", "--allow-empty", "-m", message]);
+  git(repository, ["commit", "--no-verify", "--allow-empty", "-m", message]);
 
   return git(repository, ["rev-parse", "HEAD"]);
 }

@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import packageJson from "../package.json" with { type: "json" };
 
+const envKeys = [
+  "NODE_ENV",
+  "SERVER_NAME",
+  "SERVER_VERSION",
+  "LOG_LEVEL",
+] as const;
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
@@ -14,16 +21,13 @@ async function importConfig() {
 
 describe("configuration", () => {
   it("defaults the server name and version from package.json", async () => {
-    vi.stubEnv("PORT", undefined);
-    vi.stubEnv("NODE_ENV", undefined);
-    vi.stubEnv("SERVER_NAME", undefined);
-    vi.stubEnv("SERVER_VERSION", undefined);
-    vi.stubEnv("LOG_LEVEL", undefined);
+    for (const key of envKeys) {
+      vi.stubEnv(key, undefined);
+    }
 
     const { getConfig } = await importConfig();
 
     expect(getConfig()).toEqual({
-      PORT: 3000,
       NODE_ENV: "development",
       SERVER_NAME: packageJson.name,
       SERVER_VERSION: packageJson.version,
@@ -32,7 +36,6 @@ describe("configuration", () => {
   });
 
   it("loads and parses environment values", async () => {
-    vi.stubEnv("PORT", "4311");
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("SERVER_NAME", "custom-server");
     vi.stubEnv("SERVER_VERSION", "2.0.0");
@@ -41,7 +44,6 @@ describe("configuration", () => {
     const { getConfig } = await importConfig();
 
     expect(getConfig()).toEqual({
-      PORT: 4311,
       NODE_ENV: "test",
       SERVER_NAME: "custom-server",
       SERVER_VERSION: "2.0.0",
@@ -49,8 +51,17 @@ describe("configuration", () => {
     });
   });
 
+  it("reports production and development environments", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    const config = await importConfig();
+
+    expect(config.isProduction()).toBe(true);
+    expect(config.isDevelopment()).toBe(false);
+  });
+
   it("exits when environment configuration is invalid", async () => {
-    vi.stubEnv("PORT", "not-a-number");
+    vi.stubEnv("NODE_ENV", "staging");
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     vi.spyOn(process, "exit").mockImplementation((code) => {
       throw new Error(`process.exit(${code})`);
