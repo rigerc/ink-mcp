@@ -173,7 +173,7 @@ function registerLegacyTools(server: McpServer): void {
     {
       title: "Wait For Ink State",
       description:
-        "Wait for visible text, screen changes, stable output or process exit, with a bounded timeout.",
+        "Wait for visible text, screen revisions, stable rendered output or process exit. Pass sinceRevision from ink_run_keys or ink_run_screen to avoid missed transitions.",
       inputSchema: toMcpSchema(
         Schema.Struct({
           runId: Schema.String,
@@ -186,6 +186,7 @@ function registerLegacyTools(server: McpServer): void {
           ]),
           text: Schema.optional(Schema.String),
           since: Schema.optional(Schema.String),
+          sinceRevision: Schema.optional(Schema.Number),
           stableMs: Schema.optional(Schema.Number),
           timeoutMs: Schema.optional(Schema.Number),
         }),
@@ -231,7 +232,7 @@ function registerLegacyTools(server: McpServer): void {
     {
       title: "Stop Ink Process",
       description:
-        "Terminate a managed Ink process and dispose its screen emulator.",
+        "Stop a managed PTY with a bounded graceful/forceful termination sequence; return stopped:false if termination cannot be confirmed.",
       inputSchema: toMcpSchema(
         Schema.Struct({
           runId: Schema.String,
