@@ -55,8 +55,24 @@ This is **not** an HTTP service. It does not listen on a port and must not print
 5. Inspect the current screen with ink_run_screen, and verify the expected result.
 6. Stop the process with ink_run_stop.
 
-Run handles persist across MCP calls until explicitly stopped or until the server disconnects.
-The screen snapshot is the current terminal viewport, not raw output with ANSI stripped.
+Run handles persist across MCP calls; exited runs are automatically reaped after five minutes
+or earlier when the four-run capacity is needed. The screen snapshot is the current
+terminal viewport, not raw output with ANSI stripped.
+
+`ink_run_start`, `ink_run_keys`, and `ink_run_screen` return a `revision`.
+To avoid missing a fast screen update after sending input, pass the revision returned
+by `ink_run_keys` as `sinceRevision` to `ink_run_wait` with
+`condition: "screen_changed"`. A revision indicates completed terminal output
+(or a resize), not necessarily a change in visible text. `screen_stable` requires
+at least one completed render before it can match.
+
+The runtime uses PTY read backpressure when the terminal emulator falls behind.
+`ink_run_output` offsets and limits count UTF-16 code units, not bytes, and
+will not split a surrogate pair. `ink_run_stop` attempts group termination on
+POSIX and uses Windows-compatible termination, escalating after a bounded grace
+period. It returns `stopped: false` and retains the run if exit cannot be confirmed.
+Process-tree cleanup is best-effort; OS-level isolation remains necessary for
+untrusted child processes.
 
 ## Local execution safety
 
