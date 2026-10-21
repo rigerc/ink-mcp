@@ -61,12 +61,25 @@ The screen snapshot is the current terminal viewport, not raw output with ANSI s
 ## Local execution safety
 
 PTY code execution is **disabled by default**. Set INK_MCP_ALLOW_EXECUTION=1 to enable it.
-INK_MCP_WORKSPACE_ROOT defaults to the server working directory and restricts project paths.
-The server bounds simultaneous processes, history, terminal dimensions, user input and waits.
+INK_MCP_WORKSPACE_ROOT defaults to the server working directory. It limits which project
+directories can be selected and rejects path-style executables that resolve outside that
+directory at validation time. This is a path-selection convenience, **not a security boundary**:
+bare executable names (such as `node` or `bash`) resolve through PATH, and command arguments
+are unrestricted. Even an executable inside the workspace can read or modify files elsewhere.
 
-**Local code execution is not sandboxed.** A trusted project's executable has the user's
-permissions. Do not use this server to execute untrusted projects. Do not expose the stdio
-process through a network bridge without separately designing isolation and authentication.
+To reduce accidental credential exposure, spawned processes inherit only common launch
+variables (for example PATH, HOME, temporary-directory settings, locale, and platform
+settings), not the entire MCP server environment. Additional variables can be provided
+through `ink_run_start.env`. Overrides of PATH, NODE_OPTIONS, NODE_PATH, LD_* and DYLD_*
+are rejected (case-insensitively); TERM is fixed to xterm-256color. This filtering does
+not prevent trusted code or unrestricted command arguments from accessing the host.
+
+The server bounds retained processes, output history, terminal dimensions, user input and
+waits. **Local code execution is not sandboxed.** Child processes run with the server user's
+permissions, including access to files and credentials available to that user. Do not run
+untrusted projects. For untrusted execution, use OS-level isolation with restricted mounts,
+credentials and network access. Do not expose the stdio process through a network bridge
+without separately designing isolation and authentication.
 
 ## ESM and CommonJS
 
