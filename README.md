@@ -32,31 +32,36 @@ This is **not** an HTTP service. It does not listen on a port and must not print
 
 ## MCP tools
 
+Five tools are advertised by default:
+
 | Tool | Description |
 |---|---|
-| ink_project_inspect | Inspect package dependencies, scripts and Ink/React versions |
-| ink_project_validate | Find missing dependencies and version compatibility issues |
-| ink_docs_search | Query bundled Ink reference snippets; no network requests |
-| ink_run_start | Start an Ink CLI with a real pseudoterminal |
-| ink_run_screen | Inspect the current visible screen using xterm/headless |
-| ink_run_keys | Send text, arrows, Enter, Escape, Tab, Backspace and Ctrl keys |
-| ink_run_resize | Resize the PTY and screen emulator |
-| ink_run_wait | Wait for text, screen change, stability or exit |
-| ink_run_output | Retrieve bounded raw PTY output (combined stdout/stderr) |
-| ink_run_status | Inspect process state and exit code |
-| ink_run_stop | Terminate and clean up a run |
+| `ink_project_check` | Inspect dependencies, scripts, versions, and compatibility findings |
+| `ink_run_start` | Start an Ink CLI in a PTY, optionally wait, and return its screen/status |
+| `ink_run_interact` | Send keys and/or resize, optionally wait, and return the resulting screen/status |
+| `ink_run_observe` | Read screen/status, optionally wait, or request bounded raw PTY output |
+| `ink_run_stop` | Terminate and clean up a run |
+
+`ink_project_check` returns `{ project, valid, findings }`. The three active session tools return a screen snapshot and process status; when `waitFor` is given, they also return `wait: { matched, elapsedMs }`. A timed-out wait returns `matched: false` rather than an MCP error. Wait conditions are `text_present`, `text_absent`, `screen_changed`, `screen_stable`, and `process_exit`. Conditions requiring a `text` value enforce it at runtime.
+
+The read-only `ink_run_observe` can optionally return `output: { output, offset, nextOffset, truncatedBefore, runId }` when passed `output: { offset?, limit? }`. Raw output is omitted by default.
 
 ## Example development loop
 
-1. Call ink_project_inspect with projectRoot ".".
-2. Call ink_run_start with projectRoot ".", executable "node" and args ["dist/cli.js"].
-3. Use ink_run_wait with condition "text_present" and the expected prompt.
-4. Send keys with ink_run_keys (for example ["ArrowDown", "Enter"]).
-5. Inspect the current screen with ink_run_screen, and verify the expected result.
-6. Stop the process with ink_run_stop.
+1. Call `ink_project_check` with `projectRoot: "."`.
+2. Call `ink_run_start` with `projectRoot: "."`, `executable: "node"`, `args: ["dist/cli.js"]`, and `waitFor: {condition: "text_present", text: "Select an option"}`.
+3. Call `ink_run_interact` with `runId`, `keys: ["ArrowDown", "Enter"]`, and `waitFor: {condition: "screen_stable", stableMs: 300}`. Inspect `screen.text` and `wait.matched`.
+4. Use `ink_run_observe` to inspect the screen or await `process_exit` without sending input.
+5. Always stop the process with `ink_run_stop`.
 
-Run handles persist across MCP calls until explicitly stopped or until the server disconnects.
+Run handles persist across calls until explicitly stopped or until the server disconnects.
 The screen snapshot is the current terminal viewport, not raw output with ANSI stripped.
+
+## Legacy client compatibility and Ink guidance
+
+The previous eleven-tool interface remains available with `INK_MCP_TOOLSET=legacy`, including `ink_project_inspect`, `ink_project_validate`, `ink_docs_search`, `ink_run_screen`, `ink_run_keys`, `ink_run_resize`, `ink_run_wait`, `ink_run_output`, and `ink_run_status`. This mode replaces, rather than augments, the compact tool list. The default is `INK_MCP_TOOLSET=compact`; other values are rejected at registration.
+
+Curated Ink reference snippets now live in `skills/ink-development/references/ink-guidance.json`. Clients supporting MCP Skills or ordinary resources can load them from `skill://ink-development/references/ink-guidance.json`. Legacy `ink_docs_search` searches that same local resource; no network request is made.
 
 ## Local execution safety
 
@@ -115,6 +120,7 @@ Ink version installed in the target project.
 - src/index.ts — stdio entry point
 - src/tools.ts — MCP tool registration and validated schemas
 - src/runtime/registry.ts — PTY lifecycle and headless terminal screen
-- src/runtime/project.ts — project analysis and curated documentation
+- src/runtime/project.ts — project analysis and legacy guidance search
+- skills/ink-development/references/ — published Ink guidance resource
 - src/skills.ts and skills/ — agent skill publishing
 - scripts/smoke-stdio.mts — compiled entry-point integration test
