@@ -36,11 +36,13 @@ function execute(
 
 const projectInput = toMcpSchema(Schema.Struct({ projectRoot: Schema.String }));
 const runInput = toMcpSchema(Schema.Struct({ runId: Schema.String }));
+
 const readonly = {
   readOnlyHint: true,
   idempotentHint: true,
   openWorldHint: false,
 };
+
 const mutating = { readOnlyHint: false, openWorldHint: false };
 
 export function registerTools(server: McpServer): void {

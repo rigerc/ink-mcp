@@ -96,6 +96,7 @@ export function validateProject(projectRoot: string) {
       message: "React is not declared in dependencies",
     });
   const ink = versionTuple(project.installed.ink ?? project.dependencies.ink);
+
   const react = versionTuple(
     project.installed.react ?? project.dependencies.react,
   );
@@ -195,6 +196,7 @@ export function searchDocs(query: string, version?: string, limit = 5) {
         " " +
         doc.text
       ).toLowerCase();
+
       const score = words.reduce(
         (sum, word) => sum + (haystack.includes(word) ? 1 : 0),
         0,

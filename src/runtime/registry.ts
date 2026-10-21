@@ -76,6 +76,7 @@ export function workspace(projectRoot: string): string {
   const root = realpathSync(
     resolve(process.env.INK_MCP_WORKSPACE_ROOT ?? process.cwd()),
   );
+
   const target = realpathSync(resolve(root, projectRoot));
 
   if (!within(root, target)) {
@@ -198,12 +199,14 @@ export class RunRegistry {
     }
 
     env.TERM = "xterm-256color";
+
     const terminal = new Terminal({
       cols,
       rows,
       allowProposedApi: false,
       scrollback: 2000,
     });
+
     let pty: IPty;
 
     try {
@@ -336,6 +339,7 @@ export class RunRegistry {
     const run = this.get(runId);
     const start = Math.max(run.outputBase, offset ?? run.outputBase);
     const count = Math.min(32768, Math.max(1, limit ?? 8192));
+
     const data = run.output.slice(
       start - run.outputBase,
       start - run.outputBase + count,
