@@ -13,19 +13,24 @@ const client = new Client({ name: "ink-dev-smoke", version: "0.1.0" });
 try {
   await client.connect(transport);
   const tools = await client.listTools();
-
-  if (!tools.tools.some((tool) => tool.name === "ink_run_screen")) {
-    throw new Error(
-      "Compiled stdio MCP server did not register ink_run_screen",
-    );
+  const expected = [
+    "ink_project_check",
+    "ink_run_interact",
+    "ink_run_observe",
+    "ink_run_start",
+    "ink_run_stop",
+  ];
+  const names = tools.tools.map((tool) => tool.name).sort();
+  if (JSON.stringify(names) !== JSON.stringify(expected)) {
+    throw new Error("Unexpected compact tool registration: " + names.join(", "));
   }
 
   const info = await client.callTool({
-    name: "ink_project_inspect",
+    name: "ink_project_check",
     arguments: { projectRoot: "." },
   });
 
-  if (info.isError) throw new Error("ink_project_inspect failed");
+  if (info.isError) throw new Error("ink_project_check failed");
   process.stdout.write("Compiled stdio MCP smoke test passed\n");
 } finally {
   await client.close();

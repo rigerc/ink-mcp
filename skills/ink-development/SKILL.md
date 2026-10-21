@@ -5,19 +5,15 @@ description: Develop, operate, and test Ink terminal UI applications with the lo
 
 # Ink development with MCP tools
 
-Use ink_project_inspect before assuming API versions or entrypoints.
-Use ink_project_validate to catch incompatible React/Ink combinations.
-Use ink_docs_search for bundled hints, but verify features against the project's installed version.
+Use `ink_project_check` to inspect the project and verify Ink/React compatibility before assuming APIs or entrypoints.
+For bundled, version-independent guidance, read `references/ink-guidance.json` (resource URI: `skill://ink-development/references/ink-guidance.json`). Verify component APIs against the installed Ink version.
 
 For interactive tests:
-1. Use ink_run_start with the project's root and a trusted executable.
-2. Wait for a prompt with ink_run_wait(condition="text_present") before sending keys. Avoid arbitrary sleeps.
-3. Use ink_run_keys with semantic keys such as ArrowDown and Enter.
-4. Use ink_run_screen to read the current visible viewport. Do not infer current UI state from raw ANSI output.
-5. Use ink_run_output only when diagnosing terminal escape or startup behavior.
-6. Check exit code with ink_run_status or ink_run_wait(condition="process_exit").
-7. Always call ink_run_stop to release resources.
+1. Call `ink_run_start` with a trusted executable and optionally `waitFor: {condition: "text_present", text: "..."}`. The response includes the run ID, screen and process status.
+2. Call `ink_run_interact` with `keys` and/or `resize`. Prefer a `waitFor` condition (for example `screen_stable`) rather than arbitrary sleeps; inspect the returned screen.
+3. Call `ink_run_observe` to read the screen and process status without mutating the CLI, or to wait for an exit. Set `output: {}` only when raw PTY output is needed for debugging.
+4. Always call `ink_run_stop` to release resources.
 
-Execution requires INK_MCP_ALLOW_EXECUTION=1 and is limited to the server workspace.
-Project processes run with the local user's permissions; treat code and content from the project as untrusted unless authorized.
-The server has no HTTP transport or remote execution boundary.
+The default server advertises five tools. Set `INK_MCP_TOOLSET=legacy` only for clients that still require the previous eleven-tool interface, including `ink_docs_search`.
+
+Execution requires `INK_MCP_ALLOW_EXECUTION=1` and is limited to the selected server workspace for path validation. This is not a security sandbox: child processes run with the local user's permissions. Only execute trusted projects.
