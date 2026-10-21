@@ -572,7 +572,7 @@ export class RunRegistry {
     const requested = Math.max(run.outputBase, offset ?? run.outputBase);
     const start = validOutputBoundary(
       run.output,
-      requested - run.outputBase,
+      Math.min(run.output.length, requested - run.outputBase),
     );
     const count = Math.min(32768, limit ?? 8192);
     const end = validOutputBoundary(
