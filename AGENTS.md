@@ -28,9 +28,11 @@ Do not log to stdout: the MCP stdio transport owns stdout.
 - No HTTP endpoint, Express server, health check or port exists.
 
 The runtime is intentionally local. INK_MCP_ALLOW_EXECUTION=1 must be explicitly set
-to permit execution. INK_MCP_WORKSPACE_ROOT limits which project folders can be inspected
-or used as working directories. This is not an isolation sandbox; only trusted code
-should be executed. Keep execution resource and timeout bounds in place.
+to permit execution. INK_MCP_WORKSPACE_ROOT restricts project path selection, not what
+spawned commands can access; bare executables use PATH and arguments are unrestricted.
+Only ordinary launch variables are inherited by children; high-risk environment
+overrides are rejected. These are defense-in-depth measures, not an isolation sandbox.
+Execute only trusted code and retain execution resource and timeout bounds.
 
 @xterm/headless and node-pty are CommonJS runtime dependencies, imported by
 createRequire(import.meta.url) and excluded from the Vite/Rollup bundle.

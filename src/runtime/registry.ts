@@ -108,6 +108,92 @@ function requireExecution(): void {
   }
 }
 
+// Forward only ordinary process-launch settings. Secrets and application-specific
+// environment variables must be supplied explicitly by the caller.
+const INHERITED_ENV_KEYS = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "SYSTEMROOT",
+  "WINDIR",
+  "COMSPEC",
+  "PATHEXT",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "XDG_STATE_HOME",
+  "XDG_RUNTIME_DIR",
+  "COLORTERM",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "CI",
+  "NODE_ENV",
+]);
+
+export function childEnvironment(
+  overrides: Record<string, string> = {},
+): Record<string, string> {
+  const env: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && INHERITED_ENV_KEYS.has(key.toUpperCase())) {
+      env[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key) || value.includes("\0")) {
+      throw new Error("Invalid environment override");
+    }
+
+    const upper = key.toUpperCase();
+
+    if (
+      upper === "PATH" ||
+      upper === "NODE_OPTIONS" ||
+      upper === "NODE_PATH" ||
+      upper.startsWith("LD_") ||
+      upper.startsWith("DYLD_")
+    ) {
+      throw new Error("Disallowed environment override: " + key);
+    }
+
+    env[key] = value;
+  }
+
+  env.TERM = "xterm-256color";
+
+  return env;
+}
+
+// This validates path-style executables only. Bare names resolve through PATH;
+// neither restriction confines the process after it starts.
+export function assertExecutablePath(root: string, executable: string): void {
+  if (!executable || executable.includes("\0")) {
+    throw new Error("Invalid executable");
+  }
+
+  if (executable.includes("/") || executable.includes("\\")) {
+    const target = realpathSync(resolve(root, executable));
+
+    if (!within(root, target)) {
+      throw new Error("Executable outside workspace");
+    }
+  }
+}
+
 function encodeKey(key: string): string {
   const keys = {
     Enter: "\r",
@@ -164,16 +250,7 @@ export class RunRegistry {
     const cols = boundedSize(input.cols, 80, 500);
     const rows = boundedSize(input.rows, 24, 200);
 
-    if (!input.executable || input.executable.includes("\0")) {
-      throw new Error("Invalid executable");
-    }
-
-    if (input.executable.includes("/") || input.executable.includes("\\")) {
-      const target = realpathSync(resolve(root, input.executable));
-
-      if (!within(root, target))
-        throw new Error("Executable outside workspace");
-    }
+    assertExecutablePath(root, input.executable);
 
     const args = input.args ?? [];
 
@@ -184,21 +261,7 @@ export class RunRegistry {
       throw new Error("Invalid executable arguments");
     }
 
-    const env: Record<string, string> = {};
-
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined) env[key] = value;
-    }
-
-    for (const [key, value] of Object.entries(input.env ?? {})) {
-      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key) || /[\0]/.test(value)) {
-        throw new Error("Invalid environment override");
-      }
-
-      env[key] = value;
-    }
-
-    env.TERM = "xterm-256color";
+    const env = childEnvironment(input.env);
 
     const terminal = new Terminal({
       cols,
