@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
@@ -69,7 +76,9 @@ describe("workspace selection", () => {
 
     try {
       expect(workspace(".")).toBe(realpathSync(root));
-      expect(() => workspace("../outside")).toThrow("outside INK_MCP_WORKSPACE_ROOT");
+      expect(() => workspace("../outside")).toThrow(
+        "outside INK_MCP_WORKSPACE_ROOT",
+      );
       expect(() => assertExecutablePath(root, "../outside/run.js")).toThrow(
         "Executable outside workspace",
       );
@@ -89,7 +98,9 @@ describe("workspace selection", () => {
         );
       }
     } finally {
-      if (previousRoot === undefined) delete process.env.INK_MCP_WORKSPACE_ROOT;
+      if (previousRoot === undefined) {
+        delete process.env.INK_MCP_WORKSPACE_ROOT;
+      }
       else process.env.INK_MCP_WORKSPACE_ROOT = previousRoot;
       rmSync(parent, { recursive: true, force: true });
     }
