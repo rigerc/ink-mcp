@@ -137,50 +137,21 @@ export function validateProject(projectRoot: string) {
   };
 }
 
-const documents = [
-  {
-    title: "Rendering components",
-    text: "Render React terminal UI with Ink: import {render, Text, Box} from 'ink'; render(<App />). Use Text for strings and Box for layout.",
-    terms: "render text box components react",
-    path: "readme.md",
-  },
-  {
-    title: "Layout with Box",
-    text: "Box supports flexDirection, justifyContent, alignItems, flexGrow, padding, margin, width, height and borderStyle. Layout uses Yoga/Flexbox.",
-    terms: "box flex layout width height padding border yoga",
-    path: "readme.md",
-  },
-  {
-    title: "Text component",
-    text: "Text renders styled strings inside a terminal. Typical props include color, backgroundColor, bold, italic, underline, dimColor and wrap.",
-    terms: "text typography color style wrap",
-    path: "readme.md",
-  },
-  {
-    title: "Keyboard with useInput",
-    text: "useInput((input, key) => ...) handles normal text and keys such as upArrow, downArrow, return and escape. The application requires a TTY and active input.",
-    terms: "useInput keyboard input arrow enter escape",
-    path: "readme.md",
-  },
-  {
-    title: "Focus management",
-    text: "useFocus and useFocusManager allow controlled input routing between components; check isFocused before acting on input.",
-    terms: "useFocus useFocusManager focus tab input",
-    path: "readme.md",
-  },
-  {
-    title: "Application lifecycle",
-    text: "useApp exposes exit() to stop an Ink application. Asynchronous work and cleanup should respect mount/unmount lifecycle.",
-    terms: "useApp exit lifecycle cleanup unmount",
-    path: "readme.md",
-  },
-  {
-    title: "Testing Ink",
-    text: "ink-testing-library provides render(), lastFrame(), frames, rerender(), stdin.write(), and unmount(). For modern Ink versions and real keyboard semantics, test through a PTY.",
-    terms: "test testing library render frames stdin",
-    path: "readme.md",
-  },
-];
+// Compatibility-only search. The skill resource is the single source of
+// bundled guidance for both MCP resources and the optional legacy tool.
+type Guidance = { title: string; text: string; terms: string; path: string };
+const documents = JSON.parse(
+  readFileSync(
+    // Source modules live under src/runtime/, but the bundled entry point
+    // lives under dist/. Resolve the published skill in both layouts.
+    [
+      new URL("../skills/ink-development/references/ink-guidance.json", import.meta.url),
+      new URL("../../skills/ink-development/references/ink-guidance.json", import.meta.url),
+    ].find((path) => existsSync(path)) ??
+      new URL("../skills/ink-development/references/ink-guidance.json", import.meta.url),
+    "utf8",
+  ),
+) as Guidance[];
 
 export function searchDocs(query: string, version?: string, limit = 5) {
   const words = query.toLowerCase().split(/\W+/).filter(Boolean);

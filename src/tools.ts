@@ -7,7 +7,7 @@ import {
   createTextResult,
   runMcpEffect,
 } from "./lib/utils.ts";
-import { registry } from "./runtime/registry.ts";
+import { registry, type WaitInput } from "./runtime/registry.ts";
 import {
   inspectProject,
   validateProject,
@@ -45,7 +45,7 @@ const readonly = {
 
 const mutating = { readOnlyHint: false, openWorldHint: false };
 
-export function registerTools(server: McpServer): void {
+function registerLegacyTools(server: McpServer): void {
   server.registerTool(
     "ink_project_inspect",
     {
@@ -243,4 +243,187 @@ export function registerTools(server: McpServer): void {
     },
     ({ runId, force }) => execute(() => registry.stop(runId, force)),
   );
+}
+
+
+// Compact default tool surface. The legacy eleven-tool interface remains
+// opt-in for clients that have not migrated.
+const waitForSchema = Schema.Struct({
+  condition: Schema.Literals([
+    "text_present",
+    "text_absent",
+    "screen_changed",
+    "screen_stable",
+    "process_exit",
+  ]),
+  text: Schema.optional(Schema.String),
+  since: Schema.optional(Schema.String),
+  stableMs: Schema.optional(Schema.Number),
+  timeoutMs: Schema.optional(Schema.Number),
+});
+const resizeSchema = Schema.Struct({
+  cols: Schema.Number,
+  rows: Schema.Number,
+});
+
+async function observeRun(
+  runId: string,
+  waitFor?: Omit<WaitInput, "runId">,
+  output?: { offset?: number; limit?: number },
+) {
+  const waited = waitFor ? await registry.wait({ ...waitFor, runId }) : null;
+  const screen = waited?.screen ?? (await registry.screen(runId));
+  return {
+    runId,
+    screen,
+    status: registry.status(runId),
+    ...(waited
+      ? { wait: { matched: waited.matched, elapsedMs: waited.elapsedMs } }
+      : {}),
+    ...(output
+      ? { output: registry.output(runId, output.offset, output.limit) }
+      : {}),
+  };
+}
+
+function registerCompactTools(server: McpServer): void {
+  server.registerTool(
+    "ink_project_check",
+    {
+      title: "Check Ink Project",
+      description:
+        "Inspect package scripts, entrypoints, Ink/React versions and dependency compatibility without running project code.",
+      inputSchema: projectInput,
+      annotations: readonly,
+    },
+    ({ projectRoot }) => execute(() => validateProject(projectRoot)),
+  );
+
+  server.registerTool(
+    "ink_run_start",
+    {
+      title: "Start Ink CLI",
+      description:
+        "Launch a CLI in a PTY, optionally wait for its initial state and return the visible screen and process status. Requires INK_MCP_ALLOW_EXECUTION=1.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          projectRoot: Schema.String,
+          executable: Schema.String,
+          args: Schema.optional(Schema.Array(Schema.String)),
+          cols: Schema.optional(Schema.Number),
+          rows: Schema.optional(Schema.Number),
+          env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+          waitFor: Schema.optional(waitForSchema),
+        }),
+      ),
+      annotations: mutating,
+    },
+    ({ projectRoot, executable, args, cols, rows, env, waitFor }) =>
+      execute(async () => {
+        const started = registry.start({
+          projectRoot,
+          executable,
+          args: args ? [...args] : undefined,
+          cols,
+          rows,
+          env,
+        });
+        try {
+          return {
+            ...started,
+            ...(await observeRun(started.runId, waitFor)),
+          };
+        } catch (error) {
+          registry.stop(started.runId, true);
+          throw error;
+        }
+      }),
+  );
+
+  server.registerTool(
+    "ink_run_interact",
+    {
+      title: "Interact With Ink CLI",
+      description:
+        "Resize the PTY and/or send keyboard keys, optionally wait for a condition, then return the resulting visible screen and process status.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          runId: Schema.String,
+          keys: Schema.optional(Schema.Array(Schema.String)),
+          resize: Schema.optional(resizeSchema),
+          waitFor: Schema.optional(waitForSchema),
+        }),
+      ),
+      annotations: mutating,
+    },
+    ({ runId, keys, resize, waitFor }) =>
+      execute(async () => {
+        if ((!keys || keys.length === 0) && !resize) {
+          throw new Error("keys or resize is required");
+        }
+        // A screen_changed wait must be anchored before sending input:
+        // otherwise a fast render could occur before wait() begins.
+        const since =
+          waitFor?.condition === "screen_changed" &&
+          waitFor.since === undefined
+            ? (await registry.screen(runId)).text
+            : undefined;
+        if (resize) await registry.resize(runId, resize.cols, resize.rows);
+        if (keys?.length) registry.keys(runId, [...keys]);
+        return observeRun(
+          runId,
+          waitFor && since !== undefined ? { ...waitFor, since } : waitFor,
+        );
+      }),
+  );
+
+  server.registerTool(
+    "ink_run_observe",
+    {
+      title: "Observe Ink CLI",
+      description:
+        "Read the current visible terminal screen and process status, optionally wait for a condition or include a bounded raw PTY output slice.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          runId: Schema.String,
+          waitFor: Schema.optional(waitForSchema),
+          output: Schema.optional(
+            Schema.Struct({
+              offset: Schema.optional(Schema.Number),
+              limit: Schema.optional(Schema.Number),
+            }),
+          ),
+        }),
+      ),
+      annotations: readonly,
+    },
+    ({ runId, waitFor, output }) =>
+      execute(() => observeRun(runId, waitFor, output)),
+  );
+
+  server.registerTool(
+    "ink_run_stop",
+    {
+      title: "Stop Ink Process",
+      description:
+        "Terminate a managed Ink process and dispose its screen emulator.",
+      inputSchema: toMcpSchema(
+        Schema.Struct({
+          runId: Schema.String,
+          force: Schema.optional(Schema.Boolean),
+        }),
+      ),
+      annotations: mutating,
+    },
+    ({ runId, force }) => execute(() => registry.stop(runId, force)),
+  );
+}
+
+export function registerTools(server: McpServer): void {
+  const toolset = process.env.INK_MCP_TOOLSET ?? "compact";
+  if (toolset === "legacy") return registerLegacyTools(server);
+  if (toolset !== "compact") {
+    throw new Error("INK_MCP_TOOLSET must be compact or legacy");
+  }
+  registerCompactTools(server);
 }
