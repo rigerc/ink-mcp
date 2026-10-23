@@ -245,7 +245,6 @@ function registerLegacyTools(server: McpServer): void {
   );
 }
 
-
 // Compact default tool surface. The legacy eleven-tool interface remains
 // opt-in for clients that have not migrated.
 const waitForSchema = Schema.Struct({
@@ -258,9 +257,11 @@ const waitForSchema = Schema.Struct({
   ]),
   text: Schema.optional(Schema.String),
   since: Schema.optional(Schema.String),
+  sinceRevision: Schema.optional(Schema.Number),
   stableMs: Schema.optional(Schema.Number),
   timeoutMs: Schema.optional(Schema.Number),
 });
+
 const resizeSchema = Schema.Struct({
   cols: Schema.Number,
   rows: Schema.Number,
@@ -273,17 +274,21 @@ async function observeRun(
 ) {
   const waited = waitFor ? await registry.wait({ ...waitFor, runId }) : null;
   const screen = waited?.screen ?? (await registry.screen(runId));
-  return {
+
+  const result: JsonObject = {
     runId,
     screen,
     status: registry.status(runId),
-    ...(waited
-      ? { wait: { matched: waited.matched, elapsedMs: waited.elapsedMs } }
-      : {}),
-    ...(output
-      ? { output: registry.output(runId, output.offset, output.limit) }
-      : {}),
   };
+
+  if (waited) {
+    result.wait = { matched: waited.matched, elapsedMs: waited.elapsedMs };
+  }
+
+  if (output)
+    result.output = registry.output(runId, output.offset, output.limit);
+
+  return result;
 }
 
 function registerCompactTools(server: McpServer): void {
@@ -328,13 +333,14 @@ function registerCompactTools(server: McpServer): void {
           rows,
           env,
         });
+
         try {
           return {
             ...started,
             ...(await observeRun(started.runId, waitFor)),
           };
         } catch (error) {
-          registry.stop(started.runId, true);
+          await registry.stop(started.runId, true);
           throw error;
         }
       }),
@@ -361,18 +367,25 @@ function registerCompactTools(server: McpServer): void {
         if ((!keys || keys.length === 0) && !resize) {
           throw new Error("keys or resize is required");
         }
-        // A screen_changed wait must be anchored before sending input:
+
+        // Revision waits must be anchored before sending input:
         // otherwise a fast render could occur before wait() begins.
-        const since =
+        const sinceRevision =
           waitFor?.condition === "screen_changed" &&
-          waitFor.since === undefined
-            ? (await registry.screen(runId)).text
+          waitFor.since === undefined &&
+          waitFor.sinceRevision === undefined
+            ? (await registry.screen(runId)).revision
             : undefined;
+
         if (resize) await registry.resize(runId, resize.cols, resize.rows);
+
         if (keys?.length) registry.keys(runId, [...keys]);
+
         return observeRun(
           runId,
-          waitFor && since !== undefined ? { ...waitFor, since } : waitFor,
+          waitFor && sinceRevision !== undefined
+            ? { ...waitFor, sinceRevision }
+            : waitFor,
         );
       }),
   );
@@ -421,9 +434,12 @@ function registerCompactTools(server: McpServer): void {
 
 export function registerTools(server: McpServer): void {
   const toolset = process.env.INK_MCP_TOOLSET ?? "compact";
+
   if (toolset === "legacy") return registerLegacyTools(server);
+
   if (toolset !== "compact") {
     throw new Error("INK_MCP_TOOLSET must be compact or legacy");
   }
+
   registerCompactTools(server);
 }

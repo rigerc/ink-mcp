@@ -58,28 +58,31 @@ Run handles persist across MCP calls; exited runs are automatically reaped after
 or earlier when the four-run capacity is needed. The screen snapshot is the current
 terminal viewport, not raw output with ANSI stripped.
 
-`ink_run_start`, `ink_run_keys`, and `ink_run_screen` return a `revision`.
-To avoid missing a fast screen update after sending input, pass the revision returned
-by `ink_run_keys` as `sinceRevision` to `ink_run_wait` with
-`condition: "screen_changed"`. A revision indicates completed terminal output
-(or a resize), not necessarily a change in visible text. `screen_stable` requires
-at least one completed render before it can match.
+Screen snapshots include a `revision`. Pass it as `waitFor.sinceRevision` to
+`ink_run_observe` to detect output completed since that snapshot. `ink_run_interact`
+automatically captures a revision before input for `screen_changed` unless an
+explicit `since` or `sinceRevision` is supplied. A revision indicates completed
+terminal output (or a resize), not necessarily a change in visible text.
+`screen_stable` requires a completed render and a quiet interval. After keyboard
+input it also requires a new render; input that produces no output times out with
+`matched: false` rather than returning the previous stable frame.
 
 The runtime uses PTY read backpressure when the terminal emulator falls behind.
 `ink_run_output` offsets and limits count UTF-16 code units, not bytes, and
 will not split a surrogate pair. `ink_run_stop` attempts group termination on
 POSIX and uses Windows-compatible termination, escalating after a bounded grace
-period. It returns `stopped: false` and retains the run if exit cannot be confirmed.
+period, even if the POSIX group leader exits before its descendants. It returns
+`stopped: false` and retains the run if the PTY leader's exit cannot be confirmed.
 Process-tree cleanup is best-effort; OS-level isolation remains necessary for
 untrusted child processes.
-Run handles persist across calls until explicitly stopped or until the server disconnects.
-The screen snapshot is the current terminal viewport, not raw output with ANSI stripped.
 
 ## Legacy client compatibility and Ink guidance
 
 The previous eleven-tool interface remains available with `INK_MCP_TOOLSET=legacy`, including `ink_project_inspect`, `ink_project_validate`, `ink_docs_search`, `ink_run_screen`, `ink_run_keys`, `ink_run_resize`, `ink_run_wait`, `ink_run_output`, and `ink_run_status`. This mode replaces, rather than augments, the compact tool list. The default is `INK_MCP_TOOLSET=compact`; other values are rejected at registration.
 
 Curated Ink reference snippets now live in `skills/ink-development/references/ink-guidance.json`. Clients supporting MCP Skills or ordinary resources can load them from `skill://ink-development/references/ink-guidance.json`. Legacy `ink_docs_search` searches that same local resource; no network request is made.
+Omitting the bundled skill leaves the server and other tools available;
+`ink_docs_search` reports a tool error when its guidance is absent.
 
 ## Local execution safety
 
@@ -121,7 +124,9 @@ npm run test:smoke
 npm run verify:skill-package
 ~~~
 
-The smoke test launches the **compiled** dist/index.js over MCP stdio and checks tool discovery.
+The smoke test launches the **compiled** dist/index.js over MCP stdio, checks tool
+discovery, and exercises a PTY through startup, screen reads, input, exit, and cleanup.
+It also repeats this workflow with optional skills omitted.
 This protects against type-check-passing but runtime-failing ESM import regressions.
 
 Use MCP Inspector to exercise the server:

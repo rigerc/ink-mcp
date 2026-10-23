@@ -100,8 +100,7 @@ describe("workspace selection", () => {
     } finally {
       if (previousRoot === undefined) {
         delete process.env.INK_MCP_WORKSPACE_ROOT;
-      }
-      else process.env.INK_MCP_WORKSPACE_ROOT = previousRoot;
+      } else process.env.INK_MCP_WORKSPACE_ROOT = previousRoot;
       rmSync(parent, { recursive: true, force: true });
     }
   });

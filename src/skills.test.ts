@@ -178,8 +178,16 @@ describe("ink development skill extension", () => {
     expect(skill.uri).toBe(EXAMPLE_SKILL_URI);
     expect(skill.frontmatter.name).toBe("ink-development");
     expect(skill.frontmatter.description.toLowerCase()).toContain("develop");
-    expect(skill.resources).toHaveLength(1);
-    expect(skill.resources[0]).toMatchObject({ uri: EXAMPLE_SKILL_URI });
+    expect(skill.resources.map((resource) => resource.uri).sort()).toEqual([
+      EXAMPLE_SKILL_URI,
+      "skill://ink-development/references/ink-guidance.json",
+    ]);
+
+    const skillResource = skill.resources.find(
+      (resource) => resource.uri === EXAMPLE_SKILL_URI,
+    );
+
+    if (!skillResource) throw new Error("expected SKILL.md in manifest");
 
     const getResponse = await request("skills/get", { uri: EXAMPLE_SKILL_URI });
     expect(getResponse.result).toMatchObject({
@@ -208,8 +216,8 @@ describe("ink development skill extension", () => {
     if (!contents) throw new Error("expected skill text");
     const bytes = Buffer.from(contents.text, "utf8");
     expect(contents.text).toContain("# Ink development with MCP tools");
-    expect(skill.resources[0].size).toBe(bytes.byteLength);
-    expect(skill.resources[0].digest).toBe(
+    expect(skillResource.size).toBe(bytes.byteLength);
+    expect(skillResource.digest).toBe(
       `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
     );
   });

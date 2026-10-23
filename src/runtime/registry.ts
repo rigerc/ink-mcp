@@ -76,6 +76,7 @@ type Run = {
   receivedChunks: number;
   renderedChunks: number;
   revision: number;
+  inputRevision?: number;
   lastRenderedAt?: number;
   renderWaiters: RenderWaiter[];
   exitPromise: Promise<void>;
@@ -161,14 +162,12 @@ const INHERITED_ENV_KEYS = new Set([
   "NODE_ENV",
 ]);
 
-export function childEnvironment(
-  overrides: Record<string, string> = {},
-): Record<string, string> {
-  const env: Record<string, string> = {};
+export function childEnvironment(overrides: Record<string, string> = {}) {
+  const env = new Map<string, string>();
 
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined && INHERITED_ENV_KEYS.has(key.toUpperCase())) {
-      env[key] = value;
+      env.set(key, value);
     }
   }
 
@@ -189,12 +188,12 @@ export function childEnvironment(
       throw new Error("Disallowed environment override: " + key);
     }
 
-    env[key] = value;
+    env.set(key, value);
   }
 
-  env.TERM = "xterm-256color";
+  env.set("TERM", "xterm-256color");
 
-  return env;
+  return Object.fromEntries(env);
 }
 
 // This validates path-style executables only. Bare names resolve through PATH;
@@ -250,14 +249,25 @@ function validOutputBoundary(text: string, boundary: number): number {
   const prev = text.charCodeAt(boundary - 1);
   const next = text.charCodeAt(boundary);
 
-  return prev >= 0xd800 && prev <= 0xdbff &&
-      next >= 0xdc00 && next <= 0xdfff
+  return prev >= 0xd800 && prev <= 0xdbff && next >= 0xdc00 && next <= 0xdfff
     ? boundary + 1
     : boundary;
 }
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hasProcesses(run: Run): boolean {
+  if (process.platform === "win32") return !run.exit;
+
+  try {
+    process.kill(-run.pty.pid, 0);
+
+    return true;
+  } catch {
+    return !run.exit;
+  }
 }
 
 function terminatePty(run: Run, force: boolean): void {
@@ -289,7 +299,8 @@ function terminatePty(run: Run, force: boolean): void {
     process.kill(-run.pty.pid, force ? "SIGKILL" : "SIGTERM");
   } catch {
     // Fall back to the direct PTY child if the group is unavailable.
-    run.pty.kill(force ? "SIGKILL" : "SIGTERM");
+    // An exited leader's PID may already have been reused.
+    if (!run.exit) run.pty.kill(force ? "SIGKILL" : "SIGTERM");
   }
 }
 
@@ -309,6 +320,7 @@ export class RunRegistry {
     run.disposed = true;
     run.chunks.length = 0;
     run.terminal.dispose();
+
     for (const waiter of run.renderWaiters) waiter.resolve();
     run.renderWaiters.length = 0;
     this.runs.delete(run.id);
@@ -323,6 +335,15 @@ export class RunRegistry {
         (now - run.endedAt >= RETAIN_EXITED_MS ||
           this.runs.size >= MAX_PROCESSES)
       ) {
+        // Eviction must not abandon descendants of an exited PTY leader.
+        if (hasProcesses(run)) {
+          try {
+            terminatePty(run, true);
+          } catch {
+            // Best-effort cleanup, as on server shutdown.
+          }
+        }
+
         this.release(run);
       }
     }
@@ -399,10 +420,12 @@ export class RunRegistry {
     }
 
     const env = childEnvironment(input.env);
+
     const terminal = new Terminal({
       cols,
       rows,
-      allowProposedApi: false,
+      // Screen snapshots use xterm's proposed buffer API.
+      allowProposedApi: true,
       scrollback: 2000,
     });
 
@@ -423,9 +446,11 @@ export class RunRegistry {
 
     const id = randomUUID();
     let resolveExit = () => {};
+
     const exitPromise = new Promise<void>((resolve) => {
       resolveExit = resolve;
     });
+
     const run: Run = {
       id,
       pty,
@@ -457,6 +482,7 @@ export class RunRegistry {
           run.output,
           run.output.length - MAX_OUTPUT,
         );
+
         run.output = run.output.slice(drop);
         run.outputBase += drop;
       }
@@ -518,12 +544,16 @@ export class RunRegistry {
     const run = this.get(runId);
 
     if (run.exit) throw new Error("Process has already exited");
+
     if (keys.length > 100) throw new Error("Too many keys");
     const data = keys.map(encodeKey).join("");
 
     if (data.length > MAX_INPUT_LENGTH) throw new Error("Input too large");
     // Capture before writing to avoid missing the first response frame.
     const revision = run.revision;
+
+    if (data.length > 0) run.inputRevision = revision;
+
     run.pty.write(data);
 
     return { runId, keysSent: keys.length, revision, status: "running" };
@@ -534,6 +564,7 @@ export class RunRegistry {
     const width = boundedSize(cols, 80, 500);
     const height = boundedSize(rows, 24, 200);
     await this.awaitRendered(run);
+    run.inputRevision = run.revision;
     run.terminal.resize(width, height);
     run.revision++;
     run.lastRenderedAt = Date.now();
@@ -570,15 +601,19 @@ export class RunRegistry {
     }
 
     const requested = Math.max(run.outputBase, offset ?? run.outputBase);
+
     const start = validOutputBoundary(
       run.output,
       Math.min(run.output.length, requested - run.outputBase),
     );
+
     const count = Math.min(32768, limit ?? 8192);
+
     const end = validOutputBoundary(
       run.output,
       Math.min(run.output.length, start + count),
     );
+
     const data = run.output.slice(start, end);
 
     return {
@@ -613,6 +648,7 @@ export class RunRegistry {
     const initialFrame = await this.screen(input.runId);
     const initialText = input.since ?? initialFrame.text;
     const initialRevision = input.sinceRevision ?? initialFrame.revision;
+    const stableSinceRevision = input.sinceRevision ?? run.inputRevision;
 
     while (Date.now() - start <= timeout) {
       const frame = await this.screen(input.runId);
@@ -632,6 +668,8 @@ export class RunRegistry {
           !frame.text.includes(input.text ?? "")) ||
         (input.condition === "screen_changed" && changed) ||
         (input.condition === "screen_stable" &&
+          (stableSinceRevision === undefined ||
+            frame.revision > stableSinceRevision) &&
           run.lastRenderedAt !== undefined &&
           run.renderedChunks === run.receivedChunks &&
           Date.now() - run.lastRenderedAt >= stableMs) ||
@@ -654,7 +692,7 @@ export class RunRegistry {
   async stop(runId: string, force = false) {
     const run = this.get(runId);
 
-    if (!run.exit) {
+    if (hasProcesses(run)) {
       try {
         terminatePty(run, force);
       } catch (error) {
@@ -662,9 +700,15 @@ export class RunRegistry {
       }
 
       if (!force) {
-        await Promise.race([run.exitPromise, delay(EXIT_GRACE_MS)]);
+        // The leader may exit before descendants finish. Keep the grace
+        // period and escalation tied to the process group, not just onExit.
+        const deadline = Date.now() + EXIT_GRACE_MS;
 
-        if (!run.exit) {
+        while (hasProcesses(run) && Date.now() < deadline) {
+          await delay(Math.min(50, deadline - Date.now()));
+        }
+
+        if (hasProcesses(run)) {
           try {
             terminatePty(run, true);
           } catch (error) {
@@ -691,7 +735,7 @@ export class RunRegistry {
 
   close(): void {
     for (const run of this.runs.values()) {
-      if (!run.exit) {
+      if (hasProcesses(run)) {
         try {
           terminatePty(run, true);
         } catch {

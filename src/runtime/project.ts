@@ -140,25 +140,33 @@ export function validateProject(projectRoot: string) {
 // Compatibility-only search. The skill resource is the single source of
 // bundled guidance for both MCP resources and the optional legacy tool.
 type Guidance = { title: string; text: string; terms: string; path: string };
-const documents = JSON.parse(
-  readFileSync(
-    // Source modules live under src/runtime/, but the bundled entry point
-    // lives under dist/. Resolve the published skill in both layouts.
-    [
-      new URL("../skills/ink-development/references/ink-guidance.json", import.meta.url),
-      new URL("../../skills/ink-development/references/ink-guidance.json", import.meta.url),
-    ].find((path) => existsSync(path)) ??
-      new URL("../skills/ink-development/references/ink-guidance.json", import.meta.url),
-    "utf8",
-  ),
-) as Guidance[];
+
+function readGuidance(): Guidance[] {
+  // Source modules live under src/runtime/, but the bundled entry point
+  // lives under dist/. Resolve the published skill in both layouts.
+  const path = [
+    new URL(
+      "../skills/ink-development/references/ink-guidance.json",
+      import.meta.url,
+    ),
+    new URL(
+      "../../skills/ink-development/references/ink-guidance.json",
+      import.meta.url,
+    ),
+  ].find((candidate) => existsSync(candidate));
+
+  if (!path) throw new Error("Bundled Ink guidance is not installed");
+
+  // SAFETY: this is the shipped guidance array, not a project manifest.
+  return JSON.parse(readFileSync(path, "utf8")) as Guidance[];
+}
 
 export function searchDocs(query: string, version?: string, limit = 5) {
   const words = query.toLowerCase().split(/\W+/).filter(Boolean);
 
   if (!words.length) throw new Error("Documentation query must not be empty");
 
-  const matches = documents
+  const matches = readGuidance()
     .flatMap((doc) => {
       const haystack = (
         doc.title +

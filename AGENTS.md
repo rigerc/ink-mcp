@@ -37,6 +37,10 @@ Execute only trusted code and retain execution resource and timeout bounds.
 @xterm/headless and node-pty are CommonJS runtime dependencies, imported by
 createRequire(import.meta.url) and excluded from the Vite/Rollup bundle.
 Never replace their loaders with an ESM named export without a compiled smoke test.
+Screen snapshots require xterm's allowProposedApi option for buffer access.
+Keep action waits anchored to input revisions and POSIX cleanup scoped to the
+process group even after its leader exits. Optional skill guidance must not be
+loaded eagerly during startup.
 
 Use Effect, Effect Schema and toMcpSchema for validated MCP tool operations.
 Return isError:true for genuine tool failures; use structuredContent where possible.
