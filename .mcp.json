@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ink-dev": {
+      "command": "node",
+      "args": ["/mnt/extra-ssd/dev/projects2/ink-mcp/dist/index.js"],
+      "env": {
+        "INK_MCP_WORKSPACE_ROOT": "/mnt/extra-ssd/dev/projects2/ink-mcp",
+        "INK_MCP_ALLOW_EXECUTION": "1"
+      }
+    }
+  }
+}
